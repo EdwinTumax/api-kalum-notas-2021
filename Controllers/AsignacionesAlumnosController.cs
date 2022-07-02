@@ -8,6 +8,9 @@ using Microsoft.EntityFrameworkCore;
 using System;
 using ApiKalumNotas.DTOs;
 using AutoMapper;
+using System.Linq;
+using ApiKalumNotas.Models;
+using ApiKalumNotas.Utilities;
 
 namespace ApiKalumNotas.Controllers
 {
@@ -26,11 +29,22 @@ namespace ApiKalumNotas.Controllers
             this.kalumNotasDbContext = kalumNotasDbContext;
         }
 
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<AsignacionAlumnoDetalleDTO>>> GetAsignaciones()
+        [HttpGet("{numeroPagina}", Name = "GetAsignacionAlumnoDetallePage")]
+        [Route("page/{numeroPagina}")]
+        public async Task<ActionResult<IEnumerable<AsignacionAlumnoDetalleDTO>>> GetAsignaciones(int numeroPagina = 0 )
         {
             logger.LogDebug("Iniciando el proceso para obtener el listado de las asignaciones");
-            var asignaciones = await this.kalumNotasDbContext.AsignacionesAlumnos.Include(a => a.Alumno).Include(c => c.Clase).ToListAsync();
+            var queryable = this.kalumNotasDbContext.AsignacionesAlumnos.Include(a => a.Alumno).Include(c => c.Clase).AsQueryable();
+            var paginacion = new HttpResponsePaginacion<AsignacionAlumno>(queryable,numeroPagina);
+            if(paginacion.Content == null || paginacion.Content.Count == 0)
+            {
+                logger.LogWarning("No existen registros en la tabla Asignaciones de alumnos");
+                return NoContent();
+            }
+            logger.LogInformation("Obteniendo el listado de asignaciones");
+            return Ok(paginacion);
+
+            /*var asignaciones = await this.kalumNotasDbContext.AsignacionesAlumnos.Include(a => a.Alumno).Include(c => c.Clase).ToListAsync();
             if (asignaciones == null || asignaciones.Count == 0)
             {
                 logger.LogWarning("No existen registros en la tabla Asignaciones de alumnos");
@@ -41,7 +55,7 @@ namespace ApiKalumNotas.Controllers
                 List<AsignacionAlumnoDetalleDTO> asignacionAlumnoDTOs = mapper.Map<List<AsignacionAlumnoDetalleDTO>>(asignaciones);                
                 logger.LogInformation("Obteniendo el listado de asignaciones");
                 return Ok(asignacionAlumnoDTOs);
-            }
+            }*/
         }
         [HttpGet("{asignacionId}", Name = "GetAsignacion")]
         public async Task<ActionResult<AsignacionAlumnoDetalleDTO>> GetAsignacion(string asignacionId)
@@ -89,28 +103,30 @@ namespace ApiKalumNotas.Controllers
         [HttpPut("{asignacionId}")]
         public async Task<ActionResult> Put(string asignacionId, [FromBody] AsignacionAlumnoDTO ActualizarAsignacion)
         {
+            //throw new NotImplementedException();
             logger.LogDebug($"Inicio del proceso de modificación de una asignación con el id {asignacionId}");
             AsignacionAlumno asignacion = await this.kalumNotasDbContext.AsignacionesAlumnos.FirstOrDefaultAsync(a => a.AsignacionId == asignacionId);
             if (asignacion == null)
             {
                 logger.LogInformation($"No existe la asignación con el id {asignacionId}");
-                return NotFound();
+                return NotFound(Utils.Instance.GetError(404,$"No existe la asignación con el id {asignacionId}"));
             }
             else
             {
                 logger.LogDebug($"Realizando la consulta del alumno con el carné {ActualizarAsignacion.Carne}");
+                logger.LogDebug($"{ActualizarAsignacion}");
                 Alumno alumno = await this.kalumNotasDbContext.Alumnos.FirstOrDefaultAsync(a => a.Carne == ActualizarAsignacion.Carne);
                 if (alumno == null)
                 {
                     logger.LogInformation($"No existe el alumno con el carné {ActualizarAsignacion.Carne}");
-                    return BadRequest();
+                    return BadRequest(Utils.Instance.GetError(400,$"No existe el alumno con el carné {ActualizarAsignacion.Carne}"));
                 }
                 logger.LogDebug($"Realizando la consulta de la clase con el id {ActualizarAsignacion.ClaseId}");
                 Clase clase = await this.kalumNotasDbContext.Clases.FirstOrDefaultAsync(c => c.ClaseId == ActualizarAsignacion.ClaseId);
                 if (clase == null)
                 {
                     logger.LogInformation($"No existe la clase con el id {ActualizarAsignacion.ClaseId}");
-                    return BadRequest();
+                    return BadRequest(Utils.Instance.GetError(400,$"No existe la clase con el id {ActualizarAsignacion.ClaseId}"));
                 }
                 asignacion.Carne = ActualizarAsignacion.Carne;
                 asignacion.ClaseId = ActualizarAsignacion.ClaseId;

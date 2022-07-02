@@ -10,11 +10,15 @@ using ApiKalumNotas.DTOs;
 using Microsoft.Data.SqlClient;
 using System;
 using AutoMapper;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using ApiKalumNotas.Utilities;
 
 namespace ApiKalumNotas.Controllers
 {
     [Route("/kalum-notas/v1/[controller]")]
     [ApiController]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class AlumnosController : ControllerBase
     {
         private readonly KalumNotasDBContext kalumNotasDBContext;
@@ -27,21 +31,24 @@ namespace ApiKalumNotas.Controllers
             this.kalumNotasDBContext = kalumNotasDBContext;
         }
 
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Alumno>>> GetAlumnos()
+        [HttpGet("{numeroPagina}",Name = "GetAlumnosPage")]
+        [Route("page/{numeroPagina}")]
+        public async Task<ActionResult<IEnumerable<Alumno>>> GetAlumnos(int numeroPagina = 1)
         {
-            List<Alumno> alumnos = null;
             this.logger.LogDebug("Iniciando el proceso de consulta de la información de alumnos");
-            alumnos = await this.kalumNotasDBContext.Alumnos.ToListAsync();
-            if (alumnos == null || alumnos.Count == 0)
+            var queryable = this.kalumNotasDBContext.Alumnos.AsQueryable();
+            var paginacion = new HttpResponsePaginacion<Alumno>(queryable,numeroPagina);            
+            if (paginacion.Content == null || paginacion.Content.Count == 0)
             {
                 this.logger.LogWarning("No se encontraron registros en la tabla alumnos");
                 return new NoContentResult();
-            }
+            }            
             this.logger.LogInformation("La consulta se realizo exitosamente");
-            return Ok(alumnos);
+            return Ok(paginacion);
         }
+
         [HttpGet("{carne}", Name = "GetAlumno")]
+        [AllowAnonymous]
         public async Task<ActionResult<Alumno>> GetAlumno(string carne)
         {
             this.logger.LogDebug("Iniciando el proceso de la consulta de alumno por carné");
@@ -57,6 +64,65 @@ namespace ApiKalumNotas.Controllers
                 return Ok(alumno);
             }
         }
+        [HttpGet("filter")]
+        public async Task<ActionResult<Alumno>> GetAlumnoByType(string parametro, string tipo)
+        {
+            Alumno alumno = null;
+            this.logger.LogDebug("Iniciando el proceso de la consulta de alumno por tipo");
+            if(tipo.Equals("carne")) {
+                alumno = await this.kalumNotasDBContext.Alumnos.FirstOrDefaultAsync(a => a.Carne == parametro);
+            } else if(tipo.Equals("email")) {
+                alumno = await this.kalumNotasDBContext.Alumnos.FirstOrDefaultAsync(a => a.Email == parametro);
+            }
+            if (alumno == null)
+            {
+                logger.LogWarning($"No existe el alumno con el tipo {tipo}");
+                return NotFound();
+            }
+            else
+            {
+                logger.LogInformation("Consulta ejecutada exitosamente");
+                return Ok(alumno);
+            }
+        }
+        [HttpGet("{carne}/asignaciones/page/{numeroPagina}")]        
+        public async Task<ActionResult<AsignacionAlumnoDetalleDTO>> GetAsignacionesPorCarne(string carne, int numeroPagina = 0)
+        {
+            Alumno alumno = null;
+            this.logger.LogDebug($"Iniciando el proceso de la consulta de alumno con número de carné {carne}");
+            alumno = await this.kalumNotasDBContext.Alumnos.FirstOrDefaultAsync(a => a.Carne == carne);
+            if(alumno == null)
+            {
+                logger.LogWarning($"No existe el alumno con el carné {carne}");
+                return NotFound();
+            }
+            else
+            {
+                logger.LogDebug($"Iniciando el proceso de la consulta de asignaciones con el carne = {carne}");
+                var queryable = this.kalumNotasDBContext.AsignacionesAlumnos.Include(a => a.Alumno).Include(a => a.Clase).Where(c => c.Alumno.Carne == carne).AsQueryable();
+                var paginacion = new HttpResponsePaginacion<AsignacionAlumno>(queryable,numeroPagina);                
+                if(paginacion.Content == null || paginacion.Content.Count == 0)
+                {
+                    logger.LogWarning($"No existen asignaciones para el alumno con el carné {carne}");
+                    return NoContent();
+                }
+
+                var asignaciones = await this.kalumNotasDBContext.AsignacionesAlumnos.Include(a => a.Alumno).Include(a => a.Clase).Where(c => c.Alumno.Carne == carne).ToListAsync();
+                if(asignaciones != null && asignaciones.Count == 0)
+                {
+                    logger.LogWarning($"No existen registros de asignaciones para el alumno con el carné {carne}");     
+                    return NotFound();
+                }
+                else
+                {
+                    //List<AsignacionAlumnoDetalleDTO> asignacionAlumnoDTOs = mapper.Map<List<AsignacionAlumnoDetalleDTO>>(asignaciones);    
+                    logger.LogInformation("Se ejecuto exitosamente la consulta");
+                    return Ok(paginacion);
+                }
+            }
+        }
+
+
         [HttpPost]
         public async Task<ActionResult<AlumnoDTO>> Post([FromBody] AlumnoCreateDTO value)
         {

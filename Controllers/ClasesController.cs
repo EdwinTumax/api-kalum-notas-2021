@@ -5,10 +5,15 @@ using ApiKalumNotas.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using ApiKalumNotas.Utilities;
+
 namespace ApiKalumNotas.Controllers
 {
     [Route("/kalum-notas/v1/[controller]")]
     [ApiController]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class ClasesController : ControllerBase
     {
         private readonly KalumNotasDBContext kalumNotasDBContext;
@@ -18,12 +23,14 @@ namespace ApiKalumNotas.Controllers
             this.logger = logger;
             this.kalumNotasDBContext = kalumNotasDBContext;
         }
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Clase>>> GetClases()
+        [HttpGet("page/{numeroPagina}", Name="GetClases")]
+        public async Task<ActionResult<IEnumerable<Clase>>> GetClases(int numeroPagina = 0)
         {
             logger.LogDebug("Iniciando el proceso de consulta de clases");
-            var clases = await this.kalumNotasDBContext.Clases.ToListAsync();
-            if(clases == null || clases.Count == 0)
+            var queryable = this.kalumNotasDBContext.Clases.AsQueryable();
+            var paginacion = new HttpResponsePaginacion<Clase>(queryable,numeroPagina);
+            //var clases = await this.kalumNotasDBContext.Clases.ToListAsync();
+            if(paginacion.Content == null || paginacion.Content.Count == 0)
             {   
                 logger.LogWarning("No se encontraron registros en la tabla clases");
                 return NoContent();
@@ -31,9 +38,28 @@ namespace ApiKalumNotas.Controllers
             else
             {
                 logger.LogInformation("Consulta de clases exitosamente");
-                return Ok(clases);
+                return Ok(paginacion);
             }
         }
+
+        public async Task<ActionResult<IEnumerable<Clase>>> GetClasesSinPaginar(int numeroPagina)
+        {
+            logger.LogDebug("Iniciando el proceso de consulta de clases");
+            var queryable = this.kalumNotasDBContext.Clases.AsQueryable();
+            var paginacion = new HttpResponsePaginacion<Clase>(queryable,numeroPagina);
+            //var clases = await this.kalumNotasDBContext.Clases.ToListAsync();
+            if(paginacion.Content == null || paginacion.Content.Count == 0)
+            {   
+                logger.LogWarning("No se encontraron registros en la tabla clases");
+                return NoContent();
+            }
+            else
+            {
+                logger.LogInformation("Consulta de clases exitosamente");
+                return Ok(paginacion);
+            }
+        }
+
         [HttpGet("{claseId}", Name = "GetClase")]
         public async Task<ActionResult<Clase>> GetClase(string claseId)
         {
